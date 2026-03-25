@@ -117,7 +117,7 @@
     /* ---------- Create container ---------- */
     let container = document.createElement('div');
     container.className = 'sent_karma_log';
-    container.innerHTML = '<h3>Sent Karma Logs</h3><p>Loading...</p>';
+    container.innerHTML = '<h3>Sent Karma Logs. MY UID: '+MY_UID+' </h3><p>Loading...</p>';
 
     let parent = targetDiv.parentElement;
     parent.insertAdjacentElement('afterend', container);
@@ -136,7 +136,7 @@
                 }
 
                 let html = `
-                    <h3 style="margin-top: 25px;">Sent Karma Logs</h3>
+                    <h3 style="margin-top: 25px;">Sent Karma Logs. My UID: ${MY_UID}</h3>
                     <table border="1" cellpadding="5" style="border-collapse:collapse; width:100%;">
                         <thead>
                             <tr>
