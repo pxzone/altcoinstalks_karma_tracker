@@ -117,7 +117,16 @@
     /* ---------- Create container ---------- */
     let container = document.createElement('div');
     container.className = 'sent_karma_log';
-    container.innerHTML = '<h3>Sent Karma Logs. MY UID: '+MY_UID+' </h3><p>Loading...</p>';
+     container.innerHTML = `
+    <div id="karma_header" style="display:flex; justify-content:space-between; align-items:center; margin: 20px 0px 10px 0px;">
+        <h3 style="margin:0;">Sent Karma Logs. Detected UID: ${MY_UID}</h3>
+        <button id="reset_uid_btn" style="cursor:pointer; border-radius: 3px; border: .7px solid #a6c2dd; padding: 3px 5px;">Reset UID</button>
+    </div>
+    <div id="karma_table_content">
+        <p>Loading...</p>
+    </div>
+   `;
+
 
     let parent = targetDiv.parentElement;
     parent.insertAdjacentElement('afterend', container);
@@ -131,22 +140,22 @@
                 let data = JSON.parse(res.responseText);
 
                 if (!data || data.length === 0) {
-                    container.innerHTML = '<h2>Sent Karma Logs</h2><p>No records found.</p>';
+                    let tableDiv = container.querySelector('#karma_table_content');
+                    tableDiv.innerHTML = '<p>No records found.</p>';
                     return;
                 }
 
                 let html = `
-                    <h3 style="margin-top: 25px;">Sent Karma Logs. My UID: ${MY_UID}</h3>
-                    <table border="1" cellpadding="5" style="border-collapse:collapse; width:100%;">
+                    <table border="0" cellpadding="5" style="border-collapse:collapse; width:100%; background: #9caec2; ;border-radius: 10px; ">
                         <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Username</th>
-                                <th>Type</th>
-                                <th>Topic</th>
+                            <tr style="font-weight: 700; font-size: 13px;">
+                                <th style="color: #fff;">Date</th>
+                                <th style="color: #fff;">Username</th>
+                                <th style="color: #fff;">Type</th>
+                                <th style="color: #fff;">Topic</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody style="background: #f0f4f7;">
                 `;
 
                 data.forEach(row => {
@@ -161,17 +170,30 @@
                 });
 
                 html += '</tbody></table>';
-                container.innerHTML = html;
+                let tableDiv = container.querySelector('#karma_table_content');
+                tableDiv.innerHTML = html;
 
             } catch (e) {
                 console.error('[KarmaTracker UI] Parse error:', e);
-                container.innerHTML = '<p>Error loading data</p>';
+                let tableDiv = container.querySelector('#karma_table_content');
+                tableDiv.innerHTML = '<p>Error loading data</p>';
             }
         },
         onerror: function(err) {
             console.error('[KarmaTracker UI] Request error:', err);
-            container.innerHTML = '<p>Failed to load data</p>';
+            let tableDiv = container.querySelector('#karma_table_content');
+            tableDiv.innerHTML = '<p>Failed to load data</p>';
         }
     });
+
+    let reset_btn = container.querySelector('#reset_uid_btn');
+
+    if (reset_btn) {
+        reset_btn.addEventListener('click', function() {
+            localStorage.removeItem('my_uid');
+            alert('UID cleared. Reloading...');
+            location.reload();
+        });
+    }
 
 })();
