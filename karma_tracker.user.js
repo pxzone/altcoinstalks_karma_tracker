@@ -13,14 +13,85 @@
 
     console.log('[KarmaTracker] Script loaded');
 
+    function isOwnProfilePage() {
+        return (
+            document.querySelector('span.firstlevel')?.textContent.includes('Modify Profile') ||
+            [...document.querySelectorAll('h4.catbg')]
+                .some(el => el.textContent.includes('Modify Profile'))
+        );
+    }
+
+
     // ---------- Detect UID ----------
-    let MY_UID = localStorage.getItem('my_uid') || (function(){
+    let MY_UID = localStorage.getItem('my_uid');
+
+    if (!MY_UID && isOwnProfilePage()) {
         let link = document.querySelector('a[href*="action=profile"][href*=";u="]');
-        if (!link) return null;
-        let match = link.href.match(/;u=(\d+)/);
-        if(match) localStorage.setItem('my_uid', match[1]);
-        return match ? match[1] : null;
-    })();
+        if (link) {
+            let match = link.href.match(/;u=(\d+)/);
+            if (match) {
+                MY_UID = match[1];
+                localStorage.setItem('my_uid', MY_UID);
+                console.log('[KarmaTracker] UID detected safely:', MY_UID);
+            }
+        }
+    }
+
+    let TOKEN = localStorage.getItem('karma_token');
+    // ---------- Ensure token exists ----------
+    let isFetchingToken = false;
+
+    function ensureToken(callback) {
+        if (TOKEN) return callback();
+
+        if (isFetchingToken) {
+            console.log('[KarmaTracker] Token fetch already in progress...');
+            return;
+        }
+
+        if (!MY_UID) {
+            console.warn('[KarmaTracker] No UID, cannot get token');
+            return;
+        }
+
+        isFetchingToken = true;
+
+        console.log('[KarmaTracker] Fetching token...');
+
+        GM_xmlhttpRequest({
+            method: "POST",
+            url: "https://pxzone.online/api/v1/karma/get_token",
+            headers: {
+                "Content-Type": "application/json",
+                "X-Requested-With": "XMLHttpRequest"
+            },
+            data: JSON.stringify({ giver_uid: MY_UID }),
+            onload: function(res) {
+                isFetchingToken = false;
+
+                try {
+                    let json = JSON.parse(res.responseText);
+
+                    if (json.token) {
+                        TOKEN = json.token;
+                        localStorage.setItem('karma_token', TOKEN);
+                        console.log('[KarmaTracker] Token stored:', TOKEN);
+
+                        callback(); // ✅ only call ONCE
+                    } else {
+                        console.warn('[KarmaTracker] No token returned');
+                    }
+
+                } catch(e) {
+                    console.error('[KarmaTracker] Token parse error', e);
+                }
+            },
+            onerror: function() {
+                isFetchingToken = false;
+                console.error('[KarmaTracker] Token request failed');
+            }
+        });
+    }
 
     function parseSmfParams(url) {
         let parts = url.split(';');
@@ -36,24 +107,38 @@
 
     // ---------- Send payload to API ----------
     function sendPayload(urlString) {
-        let params = parseSmfParams(urlString);
-        let payload = {
-            giver_uid: MY_UID,
-            receiver_uid: params.uid,
-            topic_id: (params.topic||'').split('.')[0],
-            post_id: params.m,
-            type: params.sa === 'applaud' ? 'positive' : 'negative',
-            created_at: new Date().toISOString()
-        };
-        console.log('[KarmaTracker] Sending:', payload);
+        ensureToken(function() {
 
-        GM_xmlhttpRequest({
-            method: "POST",
-            url: "https://pxzone.online/api/v1/karma/save",
-            headers: { "Content-Type": "application/json" },
-            data: JSON.stringify(payload),
-            onload: res => console.log('[KarmaTracker] Saved:', res.status),
-            onerror: err => console.error('[KarmaTracker] Error:', err)
+            let params = parseSmfParams(urlString);
+
+            let payload = {
+                giver_uid: MY_UID,
+                token: TOKEN,
+                receiver_uid: params.uid,
+                topic_id: (params.topic||'').split('.')[0],
+                post_id: params.m,
+                type: params.sa === 'applaud' ? 'positive' : 'negative',
+                created_at: new Date().toISOString()
+            };
+
+            console.log('[KarmaTracker] Sending:', payload);
+
+            GM_xmlhttpRequest({
+                method: "POST",
+                url: "https://pxzone.online/api/v1/karma/save",
+                headers: { "Content-Type": "application/json" },
+                data: JSON.stringify(payload),
+                onload: function(res) {
+                    try {
+                        let json = JSON.parse(res.responseText);
+                        if (json.token) {
+                            localStorage.setItem('karma_token', json.token);
+                        }
+                    } catch(e){}
+                    console.log('[KarmaTracker] Saved:', res.status);
+                }
+            });
+
         });
     }
 
@@ -91,8 +176,7 @@
     console.log('[KarmaTracker UI] Checking profile page...');
 
     /* ---------- Check if "Modify Profile" exists (means it's the user) ---------- */
-    let isOwnProfile = [...document.querySelectorAll('h4.catbg')]
-        .some(el => el.textContent.includes('Modify Profile'));
+    let isOwnProfile = isOwnProfilePage();
 
     if (!isOwnProfile) {
         console.log('[KarmaTracker UI] Not your profile, skipping');
@@ -132,62 +216,64 @@
     parent.insertAdjacentElement('afterend', container);
 
     /* ---------- Fetch data from API ---------- */
-    GM_xmlhttpRequest({
-        method: "GET",
-        url: `https://pxzone.online/api/v1/karma/history?uid=${MY_UID}`,
-        onload: function(res) {
-            try {
-                let data = JSON.parse(res.responseText);
+    ensureToken(function() {
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: `https://pxzone.online/api/v1/karma/history?token=${TOKEN}`,
+            onload: function(res) {
+                try {
+                    let data = JSON.parse(res.responseText);
 
-                if (!data || data.length === 0) {
-                    let tableDiv = container.querySelector('#karma_table_content');
-                    tableDiv.innerHTML = '<p>No records found.</p>';
-                    return;
-                }
+                    if (!data || data.length === 0) {
+                        let tableDiv = container.querySelector('#karma_table_content');
+                        tableDiv.innerHTML = '<p>No records found.</p>';
+                        return;
+                    }
 
-                let html = `
-                    <table border="0" cellpadding="5" style="border-collapse:collapse; width:100%; background: #9caec2; ;border-radius: 10px; ">
-                        <thead>
-                            <tr style="font-weight: 700; font-size: 13px;">
-                                <th style="color: #fff;">Date</th>
-                                <th style="color: #fff;">Username</th>
-                                <th style="color: #fff;">Type</th>
-                                <th style="color: #fff;">Topic</th>
-                            </tr>
-                        </thead>
-                        <tbody style="background: #f0f4f7;">
-                `;
-
-                data.forEach(row => {
-                    html += `
-                        <tr>
-                            <td>${row.created_at}</td>
-                            <td><a target="_blank" href="https://www.altcoinstalks.com/index.php?action=profile;u=${row.receiver_uid}">${row.username}</a></td>
-                            <td style="font-weight: bold;">${row.type}</td>
-                            <td><a target="_blank" href="https://www.altcoinstalks.com/index.php?topic=${row.topic_id}.msg${row.post_id};topicseen#msg${row.post_id}">${row.topic_name}</a></td>
-                        </tr>
+                    let html = `
+                        <table border="0" cellpadding="5" style="border-collapse:collapse; width:100%; background: #a7b5c4; ;border-radius: 5px; ">
+                            <thead>
+                                <tr>
+                                    <th style="color: #fff; font-size: 13.5px">Date</th>
+                                    <th style="color: #fff; font-size: 13.5px">Username</th>
+                                    <th style="color: #fff; font-size: 13.5px">Type</th>
+                                    <th style="color: #fff; font-size: 13.5px">Topic</th>
+                                </tr>
+                            </thead>
+                            <tbody style="background: #f0f4f7;">
                     `;
-                });
 
-                html += '</tbody></table>';
-                let tableDiv = container.querySelector('#karma_table_content');
-                tableDiv.innerHTML = html;
+                    data.forEach(row => {
+                        html += `
+                            <tr>
+                                <td>${row.created_at}</td>
+                                <td><a target="_blank" href="https://www.altcoinstalks.com/index.php?action=profile;u=${row.receiver_uid}">${row.username}</a></td>
+                                <td style="font-weight: bold;">${row.type}</td>
+                                <td><a target="_blank" href="https://www.altcoinstalks.com/index.php?topic=${row.topic_id}.msg${row.post_id};topicseen#msg${row.post_id}">${row.topic_name}</a></td>
+                            </tr>
+                        `;
+                    });
 
-            } catch (e) {
-                console.error('[KarmaTracker UI] Parse error:', e);
+                    html += '</tbody></table>';
+                    let tableDiv = container.querySelector('#karma_table_content');
+                    tableDiv.innerHTML = html;
+
+                } catch (e) {
+                    console.error('[KarmaTracker UI] Parse error:', e);
+                    let tableDiv = container.querySelector('#karma_table_content');
+                    tableDiv.innerHTML = '<p>Error loading data</p>';
+                }
+            },
+            onerror: function(err) {
+                console.error('[KarmaTracker UI] Request error:', err);
                 let tableDiv = container.querySelector('#karma_table_content');
-                tableDiv.innerHTML = '<p>Error loading data</p>';
+                tableDiv.innerHTML = '<p>Failed to load data</p>';
             }
-        },
-        onerror: function(err) {
-            console.error('[KarmaTracker UI] Request error:', err);
-            let tableDiv = container.querySelector('#karma_table_content');
-            tableDiv.innerHTML = '<p>Failed to load data</p>';
-        }
+        });
     });
 
-    let reset_btn = container.querySelector('#reset_uid_btn');
 
+    let reset_btn = container.querySelector('#reset_uid_btn');
     if (reset_btn) {
         reset_btn.addEventListener('click', function() {
             localStorage.removeItem('my_uid');
@@ -195,5 +281,4 @@
             location.reload();
         });
     }
-
 })();
