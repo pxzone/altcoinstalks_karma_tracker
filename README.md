@@ -1,7 +1,7 @@
 
 # [Userscript] Sent Karma Log Tracker
 
-This userscript work just like how the karma link (positive/negative) works in the forum. And this will show where and who you sent karma in he past 120 days.
+This userscript work just like how the karma link (positive/negative) works in the forum. And this will show where and who you sent karma in the past 120 days.
 Just like how the karma works, this userscript will
 - Save Karma from karma link (positive/negative)
 - Won't save and only update karma type within 10 hours
